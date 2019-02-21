@@ -121,10 +121,19 @@ struct Player {
     int turn, walk;
 };
 
+struct Sprite {
+    float x, y;
+    size_t texId;
+    float playerDist;
+    bool closerThan(const Sprite& other) const {
+        return playerDist < other.playerDist;
+    }
+};
+
 struct GameState {
     Map map;
     Player player;
-    //std::vector<Sprite> monsters;
+    std::vector<Sprite> monsters;
     Texture walls;
     //Texture tex_monst;
 };
@@ -195,7 +204,7 @@ inline size_t texture_x(float hit_x, float hit_y, const Texture& walls)
     return (size_t)tex;
 }
 
-void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const size_t cell_w, const size_t cell_h) {
+void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const std::vector<Sprite> sprites, const size_t cell_w, const size_t cell_h) {
     for (size_t j=0; j<map.h; j++) {  // draw the map itself
         for (size_t i=0; i<map.w; i++) {
             if (map.is_empty(i, j)) continue; // skip empty spaces
@@ -206,9 +215,14 @@ void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const size_
             fb.drawRectangle(rect_x, rect_y, cell_w, cell_h, walls.get_pixel(0, 0, texid)); // the color is taken from the upper left pixel of the texture #texid
         }
     }
-    //for (size_t i=0; i<sprites.size(); i++) { // show the monsters
-    //    fb.drawRectangle(sprites[i].x*cell_w-3, sprites[i].y*cell_h-3, 6, 6, color(255, 0, 0));
-    //}
+    auto monster_size = 6u;
+    for (size_t i=0; i<sprites.size(); i++) { // show the monsters
+        fb.drawRectangle(size_t(sprites[i].x*cell_w-monster_size/2),
+            size_t(sprites[i].y*cell_h-monster_size/2),
+            size_t(monster_size), 
+            size_t(monster_size), 
+            color(255, 0, 0));
+    }
 }
 
 void render(const GameState& gs, FrameBuffer& fb)
@@ -216,6 +230,7 @@ void render(const GameState& gs, FrameBuffer& fb)
     const auto& map = gs.map;
     const auto& player = gs.player;
     const auto& walls = gs.walls;
+    const auto& sprites = gs.monsters;
     fb.clear(color(255, 255, 255));
 
     auto cell_w = W / (map.w*2);
@@ -268,7 +283,7 @@ void render(const GameState& gs, FrameBuffer& fb)
             break;
         }
     }
-    draw_map(fb, walls, map, cell_w, cell_h);
+    draw_map(fb, walls, map, sprites, cell_w, cell_h);
 }
 
 const float Pi = std::atan(1.0f)*4;
@@ -286,6 +301,13 @@ int main()
     GameState gs{ 
         Map(), 
         Player{3.456f, 2.345f, 1.523f, Pi/3.f, 0, 0}, 
+        {
+            {3.523f, 3.812f, 2, 0},               // monsters lists
+            {1.834f, 8.765f, 0, 0},
+            {5.323f, 5.365f, 1, 0},
+            {14.32f, 13.36f, 3, 0},
+            {4.123f, 10.76f, 1, 0}
+        },
         Texture{ walls, (short)walls_y, (short)(walls_x / walls_y) }
     };
 
