@@ -143,6 +143,21 @@ struct FrameBuffer {
         std::fill(pixels.begin(), pixels.end(), p);
     }
 
+    void drawRectangle(size_t x, size_t y, size_t w, size_t h, pxl pixel)
+    {
+        for (auto i = 0u; i < h; ++i)
+        {
+            auto cy = y + i;
+            if (cy >= H) break;
+            for (auto j = 0u; j < w; ++j)
+            {
+                auto cx = x + j;
+                if (cx >= W) break;
+                at(cx, cy) = pixel;
+            }
+        }
+    }
+
     void drawColumn(const Texture::column& column, size_t x, size_t y) {
         auto ptr = pixels.begin() + y * W + x;
         for (const auto pixel : column)
@@ -178,6 +193,22 @@ inline size_t texture_x(float hit_x, float hit_y, const Texture& walls)
         tex += walls.size;
     assert(tex >= 0 && tex < walls.size);
     return (size_t)tex;
+}
+
+void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const size_t cell_w, const size_t cell_h) {
+    for (size_t j=0; j<map.h; j++) {  // draw the map itself
+        for (size_t i=0; i<map.w; i++) {
+            if (map.is_empty(i, j)) continue; // skip empty spaces
+            size_t rect_x = i*cell_w;
+            size_t rect_y = j*cell_h;
+            size_t texid = map.get(i, j);
+            assert(texid<walls.count);
+            fb.drawRectangle(rect_x, rect_y, cell_w, cell_h, walls.get_pixel(0, 0, texid)); // the color is taken from the upper left pixel of the texture #texid
+        }
+    }
+    //for (size_t i=0; i<sprites.size(); i++) { // show the monsters
+    //    fb.drawRectangle(sprites[i].x*cell_w-3, sprites[i].y*cell_h-3, 6, 6, color(255, 0, 0));
+    //}
 }
 
 void render(const GameState& gs, FrameBuffer& fb)
@@ -237,6 +268,7 @@ void render(const GameState& gs, FrameBuffer& fb)
             break;
         }
     }
+    draw_map(fb, walls, map, cell_w, cell_h);
 }
 
 const float Pi = std::atan(1.0f)*4;
