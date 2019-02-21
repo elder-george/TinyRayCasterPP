@@ -9,10 +9,12 @@
 #include <array>
 #include <algorithm>
 #include <cassert>
-#define _USE_MATH_DEFINES 
 #include <cmath>
 #include <chrono>
 #include <sstream>
+
+// I was unable to get M_PI out of <cmath>, so computing it instead.
+const float Pi = std::atan(1.0f)*4;
 
 using namespace std;
 
@@ -58,9 +60,17 @@ struct Map {
 
 
 using pxl = uint32_t;
+inline pxl color(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+    return r | (g << 8) | (b << 16) | (a << 24);
+}
 inline pxl color(uint8_t r, uint8_t g, uint8_t b)
 {
-    return r | (g << 8) | (b << 16) | (255 << 24);
+    return color(r, g, b, 255);
+}
+inline uint8_t alpha(pxl pixel)
+{
+    return (pixel >> 24) & 0xff;
 }
 
 struct Texture {
@@ -74,7 +84,7 @@ struct Texture {
     inline pxl get_pixel(size_t texture_id, size_t x, size_t y) const
     {
         auto pxlColor = img.getPixel((unsigned)(x + size * texture_id), (unsigned)y);
-        auto pxl = color(pxlColor.r, pxlColor.g, pxlColor.b);
+        auto pxl = color(pxlColor.r, pxlColor.g, pxlColor.b, pxlColor.a);
         return pxl;
     }
 
@@ -125,8 +135,15 @@ struct Sprite {
     float x, y;
     size_t texId;
     float playerDist;
-    bool closerThan(const Sprite& other) const {
-        return playerDist < other.playerDist;
+    bool operator<(const Sprite& other) const {
+        return playerDist > other.playerDist;
+    }
+
+    void updateDistance(const Player& player)
+    {
+        auto dx = x - player.x;
+        auto dy = y - player.y;
+        playerDist = std::sqrt(dx*dx + dy * dy);
     }
 };
 
@@ -135,7 +152,7 @@ struct GameState {
     Player player;
     std::vector<Sprite> monsters;
     Texture walls;
-    //Texture tex_monst;
+    Texture tex_monsters;
 };
 
 struct FrameBuffer {
@@ -162,7 +179,8 @@ struct FrameBuffer {
             {
                 auto cx = x + j;
                 if (cx >= W) break;
-                at(cx, cy) = pixel;
+                if (alpha(pixel) > 0)
+                    at(cx, cy) = pixel;
             }
         }
     }
@@ -173,7 +191,8 @@ struct FrameBuffer {
         {
             if (y > H)
                 break;
-            *ptr = pixel;
+            if (alpha(pixel) > 128)
+                *ptr = pixel;
             ptr += W;
             ++y;
         }
@@ -223,6 +242,46 @@ void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const std::
             size_t(monster_size), 
             color(255, 0, 0));
     }
+}
+
+void draw_sprite(FrameBuffer& fb, const GameState& gs, const Sprite& sprite, const std::array<float, W / 2>& depth_buffer)
+{
+    const auto& player = gs.player;
+    const auto& map = gs.map;
+    const auto tex = gs.tex_monsters;
+    
+    float sprite_dir = std::atan2(sprite.y - player.y, sprite.x - player.x);
+    while (sprite_dir - player.a >  Pi) sprite_dir -= 2*Pi; // remove unncesessary periods from the relative direction
+    while (sprite_dir - player.a < -Pi) sprite_dir += 2*Pi;
+
+    size_t sprite_screen_size = std::min<size_t>(2000, static_cast<size_t>(H/sprite.playerDist)); // screen sprite size
+    // do not forget the 3D view takes only a half of the framebuffer, thus fb.w/2 for the screen width
+    int h_offset = (sprite_dir - player.a)*(W/2)/(player.fov) + (W/2)/2 - sprite_screen_size/2;
+    int v_offset = H/2 - sprite_screen_size/2;
+
+    for (size_t i = 0; i < sprite_screen_size; ++i)
+    {
+        int x = h_offset + i;
+        if (x < 0 || x >= W / 2) continue;
+        if (depth_buffer[x] < sprite.playerDist) continue; // this sprite column is occluded
+        for (size_t j = 0; j < sprite_screen_size; ++j)
+        {
+            int y = v_offset + j;
+            if (y < 0 || y >= H) continue;
+            auto pixel = tex.get_pixel(sprite.texId, i*tex.size / sprite_screen_size, j*tex.size / sprite_screen_size);
+            auto a = alpha(pixel);
+            if (a  > 128)
+                fb.at(W / 2 + h_offset + i, v_offset + j) = pixel;
+        }
+        //fb.drawColumn(tex.get_scaled_column(sprite.texId, i*tex.size / sprite_screen_size, sprite_screen_size), x, v_offset);
+        //int y = v_offset;
+        //for (auto pixel : tex.get_scaled_column(sprite.texId, i*tex.size / sprite_screen_size, v_offset))
+        //{
+        //    if (y < 0 || y >= H) continue;
+        //    f
+        //}
+    }
+
 }
 
 void render(const GameState& gs, FrameBuffer& fb)
@@ -284,9 +343,11 @@ void render(const GameState& gs, FrameBuffer& fb)
         }
     }
     draw_map(fb, walls, map, sprites, cell_w, cell_h);
-}
 
-const float Pi = std::atan(1.0f)*4;
+    for (const auto& sprite : sprites) {
+        draw_sprite(fb, gs, sprite, depth_buffer);
+    }
+}
 
 int main()
 {
@@ -297,6 +358,9 @@ int main()
     sf::Image walls;
     walls.loadFromFile("walltext.png");
     auto[walls_x, walls_y] = walls.getSize();
+    sf::Image monsters;
+    monsters.loadFromFile("monsters.png");
+    auto[monsters_x, monsters_y] = monsters.getSize();
 
     GameState gs{ 
         Map(), 
@@ -308,7 +372,8 @@ int main()
             {14.32f, 13.36f, 3, 0},
             {4.123f, 10.76f, 1, 0}
         },
-        Texture{ walls, (short)walls_y, (short)(walls_x / walls_y) }
+        Texture{ walls, (short)walls_y, (short)(walls_x / walls_y) },
+        Texture{ monsters, (short)monsters_y, (short)(monsters_x/monsters_y) }
     };
 
     FrameBuffer fb;
@@ -354,6 +419,9 @@ int main()
                 }
             }
         }
+        for (auto& sprite : gs.monsters)
+            sprite.updateDistance(gs.player);
+        std::sort(gs.monsters.begin(), gs.monsters.end());
         {
             std::wstringstream s;
             clock.restart();
