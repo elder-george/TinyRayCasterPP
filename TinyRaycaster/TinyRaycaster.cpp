@@ -11,6 +11,8 @@
 #include <cassert>
 #define _USE_MATH_DEFINES 
 #include <cmath>
+#include <chrono>
+#include <sstream>
 
 using namespace std;
 
@@ -48,7 +50,7 @@ struct Map {
         assert(y < h && x < w && "coordinate is outside of map");
         return _map[y*w + x] - '0';
     }
-    bool is_empty(const size_t x, const size_t y) const {
+     bool is_empty(const size_t x, const size_t y) const {
         assert(y < h && x < w && "coordinate is outside of map");
         return _map[y*w + x] == ' ';
     }
@@ -56,7 +58,7 @@ struct Map {
 
 
 using pxl = uint32_t;
-pxl color(uint8_t r, uint8_t g, uint8_t b)
+inline pxl color(uint8_t r, uint8_t g, uint8_t b)
 {
     return r | (g << 8) | (b << 16) | (255 << 24);
 }
@@ -69,14 +71,14 @@ struct Texture {
     const sf::Image& img;
     short size, count;
 
-    pxl get_pixel(size_t texture_id, size_t x, size_t y) const
+    inline pxl get_pixel(size_t texture_id, size_t x, size_t y) const
     {
         auto pxlColor = img.getPixel((unsigned)(x + size * texture_id), (unsigned)y);
         auto pxl = color(pxlColor.r, pxlColor.g, pxlColor.b);
         return pxl;
     }
 
-    column get_scaled_column(size_t textureId, size_t x, size_t height) const
+    inline column get_scaled_column(size_t textureId, size_t x, size_t height) const
     {
         assert(x < size && textureId < count);
         return std::make_pair(iter{*this, textureId, x, 0u, height}, sentinel{});
@@ -87,16 +89,16 @@ struct Texture {
         size_t textureId, x, y;
         size_t height;
 
-        pxl operator*() {
+        inline pxl operator*() {
             return tex.get_pixel(textureId, x, y*tex.size/height);
         }
 
-        iter& operator++() {
+        inline iter& operator++() {
             ++y;
             return *this;
         }
 
-        bool operator!=(const sentinel&) {
+        inline bool operator != (const sentinel&) {
             return y < height;
         }
     };
@@ -105,10 +107,10 @@ struct Texture {
 
 };
 
-auto begin(Texture::column& c) -> Texture::iter {
+auto begin(const Texture::column& c) -> Texture::iter {
     return get<0>(c);
 }
-auto end(Texture::column& c) -> Texture::sentinel {
+auto end(const Texture::column& c) -> Texture::sentinel {
     return get<1>(c);
 }
 
@@ -132,7 +134,7 @@ struct FrameBuffer {
         pixels.resize(W*H);
     }
 
-    pxl& at(size_t x, size_t y) {
+    inline pxl& at(size_t x, size_t y) {
         assert(x < W && y < H);
         return pixels[y*W + x];
     }
@@ -141,7 +143,19 @@ struct FrameBuffer {
         std::fill(pixels.begin(), pixels.end(), p);
     }
 
-    void draw(sf::Texture& texture) {
+    void drawColumn(const Texture::column& column, size_t x, size_t y) {
+        auto ptr = pixels.begin() + y * W + x;
+        for (const auto pixel : column)
+        {
+            if (y > H)
+                break;
+            *ptr = pixel;
+            ptr += W;
+            ++y;
+        }
+    }
+
+    void drawTo(sf::Texture& texture) {
         texture.update(reinterpret_cast<uint8_t*>(pixels.data()), W, H, 0, 0);
     }
 
@@ -149,21 +163,11 @@ private:
     std::vector<pxl> pixels;
 };
 
-float clamp(float v, float lo, float hi)
-{
-    return v < lo ? lo
-         : v > hi ? hi
-         : v;
+inline float frac(float v) {
+    return v - std::nearbyint(v);
 }
 
-// will load actual textures later
-//pxl wallColors[]{ color(255,0,0), color(0,255,0), color(0,0,255), color(255,255,0), color(0,255,255), color(255,0,255), };
-
-float frac(float v) {
-    return v - floor(v + .5f);
-}
-
-size_t texture_x(float hit_x, float hit_y, const Texture& walls)
+inline size_t texture_x(float hit_x, float hit_y, const Texture& walls)
 {
     auto x = frac(hit_x);
     auto y = frac(hit_y);
@@ -192,7 +196,10 @@ void render(const GameState& gs, FrameBuffer& fb)
     for (size_t i = 0; i < W / 2; ++i)
     {
         float angle = player.a + player.fov * (i / (W / 2.f) - 0.5f);
-        
+        auto cos_a = std::cos(angle);
+        auto sin_a = std::sin(angle);
+
+        auto cos_rel = std::cos(angle - player.a);
         //Ray marching
         const float max_ray = 20;
         for (auto t = 0.f; t < max_ray; t += 0.01f)
@@ -200,11 +207,11 @@ void render(const GameState& gs, FrameBuffer& fb)
             // x has to be in [0, W / cell_w - 1] = [0, map.w*2 - 1 ]
             // 0 <= player.x + t*cos(a) < map.w * 2 - 1
             // player.x >= max_ray && player.x < map.w*2 - max_ray - 1
-            float x = player.x + t * std::cos(angle);
+            float x = player.x + t * cos_a;
             assert(x >= 0 && (size_t)x <= map.w - 1);
             assert(size_t(x) * cell_w < W);
             // y needs to be in [0, H / cell_h) = [0, map.h)
-            float y = player.y + t * std::sin(angle);
+            float y = player.y + t * sin_a;
             assert(y >= 0 && (size_t)y <= map.h - 1);
             assert(size_t(y) * cell_h < H);
             
@@ -218,22 +225,15 @@ void render(const GameState& gs, FrameBuffer& fb)
             auto tex_id = map.get(map_x, map_y); // our ray touches a wall, so draw the vertical column to create an illusion of 3D
             assert(tex_id >= 0 && tex_id < walls.count);
             
-            float dist = t * std::cos(angle - player.a);
+            float dist = t * cos_rel;
             depth_buffer[i] = dist;
             size_t column_h = std::min<size_t>(2000, size_t(H / dist));
 
             auto tex_x = texture_x(x, y, walls);
             auto column = walls.get_scaled_column(tex_id, tex_x, column_h);
             size_t pix_x = i + W / 2;
-            {
-                size_t j = 0;
-                for (auto pxl : column) {
-                    size_t pix_y = j + H / 2 - column_h / 2;
-                    if (pix_y < H)
-                        fb.at(pix_x, pix_y) = pxl;
-                    ++j;
-                }
-            }
+            size_t pix_y =  H / 2 - column_h / 2;
+            fb.drawColumn(column, pix_x, pix_y);
             break;
         }
     }
@@ -264,6 +264,15 @@ int main()
         fb.at(x, x) = color(255, 0, 0);
     }
 
+    sf::Clock clock;
+    sf::Font defaultFont;
+    defaultFont.loadFromFile(R"(c:\windows\fonts\arial.ttf)");
+    sf::Text txt;
+    txt.setFont(defaultFont);
+    txt.setFillColor(sf::Color::Black);
+    txt.setStyle(sf::Text::Bold);
+    txt.setCharacterSize(42);
+    txt.setString(L"Test");
     while (window.isOpen())
     {
         sf::Event e;
@@ -291,10 +300,17 @@ int main()
                 }
             }
         }
-        render(gs, fb);
-        fb.draw(texture);
+        {
+            std::wstringstream s;
+            clock.restart();
+            render(gs, fb);
+            s << clock.restart().asMilliseconds()<<L"ms";
+            txt.setString(s.str());
+        }
+        fb.drawTo(texture);
         sf::Sprite sprite{ texture };
         window.draw(sprite);
+        window.draw(txt);
         window.display();
     }
 	return 0;
