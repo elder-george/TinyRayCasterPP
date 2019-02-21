@@ -3,10 +3,299 @@
 
 #include "TinyRaycaster.h"
 
+#include <SFML/Graphics.hpp>
+
+#include <vector>
+#include <array>
+#include <algorithm>
+#include <cassert>
+#define _USE_MATH_DEFINES 
+#include <cmath>
+
 using namespace std;
+
+constexpr unsigned int W = 1024;
+constexpr unsigned int H = 512;
+
+static const char _map[]{ 
+    "0000222222220000"\
+    "1              5"\
+    "1              5"\
+    "1     01111    5"\
+    "0     0        5"\
+    "0     3     1155"\
+    "0   1000       5"\
+    "0   3  0       5"\
+    "5   4  100011  5"\
+    "5   4   1      4"\
+    "0       1      4"\
+    "2       1  44444"\
+    "0     000      4"\
+    "0 111          4"\
+    "0              4"\
+    "0002222244444444" 
+};
+
+struct Map {
+    size_t w, h; // overall map dimensions
+    Map() 
+        : w(16), h(16)
+    {
+        assert(sizeof(_map) == w * h + 1);
+    }
+    int get(const size_t x, const size_t y) const
+    {
+        assert(y < h && x < w && "coordinate is outside of map");
+        return _map[y*w + x] - '0';
+    }
+    bool is_empty(const size_t x, const size_t y) const {
+        assert(y < h && x < w && "coordinate is outside of map");
+        return _map[y*w + x] == ' ';
+    }
+};
+
+
+using pxl = uint32_t;
+pxl color(uint8_t r, uint8_t g, uint8_t b)
+{
+    return r | (g << 8) | (b << 16) | (255 << 24);
+}
+
+struct Texture {
+    // instead of creating a dynamic collection of pixels, we'll return a pair of iterators
+    struct iter; struct sentinel;
+    using column = std::pair<typename Texture::iter, typename Texture::sentinel>;
+
+    const sf::Image& img;
+    short size, count;
+
+    pxl get_pixel(size_t texture_id, size_t x, size_t y) const
+    {
+        auto pxlColor = img.getPixel((unsigned)(x + size * texture_id), (unsigned)y);
+        auto pxl = color(pxlColor.r, pxlColor.g, pxlColor.b);
+        return pxl;
+    }
+
+    column get_scaled_column(size_t textureId, size_t x, size_t height) const
+    {
+        assert(x < size && textureId < count);
+        return std::make_pair(iter{*this, textureId, x, 0u, height}, sentinel{});
+    }
+
+    struct iter {
+        const Texture& tex;
+        size_t textureId, x, y;
+        size_t height;
+
+        pxl operator*() {
+            return tex.get_pixel(textureId, x, y*tex.size/height);
+        }
+
+        iter& operator++() {
+            ++y;
+            return *this;
+        }
+
+        bool operator!=(const sentinel&) {
+            return y < height;
+        }
+    };
+    // fake `end` iterator to force the bounds check for `y`.
+    struct sentinel {};
+
+};
+
+auto begin(Texture::column& c) -> Texture::iter {
+    return get<0>(c);
+}
+auto end(Texture::column& c) -> Texture::sentinel {
+    return get<1>(c);
+}
+
+struct Player {
+    float x, y;
+    float a;
+    float fov;
+    int turn, walk;
+};
+
+struct GameState {
+    Map map;
+    Player player;
+    //std::vector<Sprite> monsters;
+    Texture walls;
+    //Texture tex_monst;
+};
+
+struct FrameBuffer {
+    FrameBuffer() {
+        pixels.resize(W*H);
+    }
+
+    pxl& at(size_t x, size_t y) {
+        assert(x < W && y < H);
+        return pixels[y*W + x];
+    }
+
+    void clear(pxl p) {
+        std::fill(pixels.begin(), pixels.end(), p);
+    }
+
+    void draw(sf::Texture& texture) {
+        texture.update(reinterpret_cast<uint8_t*>(pixels.data()), W, H, 0, 0);
+    }
+
+private:
+    std::vector<pxl> pixels;
+};
+
+float clamp(float v, float lo, float hi)
+{
+    return v < lo ? lo
+         : v > hi ? hi
+         : v;
+}
+
+// will load actual textures later
+//pxl wallColors[]{ color(255,0,0), color(0,255,0), color(0,0,255), color(255,255,0), color(0,255,255), color(255,0,255), };
+
+float frac(float v) {
+    return v - floor(v + .5f);
+}
+
+size_t texture_x(float hit_x, float hit_y, const Texture& walls)
+{
+    auto x = frac(hit_x);
+    auto y = frac(hit_y);
+    int tex = (std::abs(y) > std::abs(x))
+        ? size_t(y * walls.size)
+        : size_t(x * walls.size);
+    if (tex < 0)
+        tex += walls.size;
+    assert(tex >= 0 && tex < walls.size);
+    return (size_t)tex;
+}
+
+void render(const GameState& gs, FrameBuffer& fb)
+{
+    const auto& map = gs.map;
+    const auto& player = gs.player;
+    const auto& walls = gs.walls;
+    fb.clear(color(255, 255, 255));
+
+    auto cell_w = W / (map.w*2);
+    auto cell_h = H / (map.h);
+
+    std::array<float, W / 2> depth_buffer{ };
+    depth_buffer.fill(1e3);
+
+    for (size_t i = 0; i < W / 2; ++i)
+    {
+        float angle = player.a + player.fov * (i / (W / 2.f) - 0.5f);
+        
+        //Ray marching
+        const float max_ray = 20;
+        for (auto t = 0.f; t < max_ray; t += 0.01f)
+        {
+            // x has to be in [0, W / cell_w - 1] = [0, map.w*2 - 1 ]
+            // 0 <= player.x + t*cos(a) < map.w * 2 - 1
+            // player.x >= max_ray && player.x < map.w*2 - max_ray - 1
+            float x = player.x + t * std::cos(angle);
+            assert(x >= 0 && (size_t)x <= map.w - 1);
+            assert(size_t(x) * cell_w < W);
+            // y needs to be in [0, H / cell_h) = [0, map.h)
+            float y = player.y + t * std::sin(angle);
+            assert(y >= 0 && (size_t)y <= map.h - 1);
+            assert(size_t(y) * cell_h < H);
+            
+            // visibility cone
+            fb.at((size_t)(x * cell_w), (size_t)(y*cell_h)) = color(190, 190, 190);
+
+            auto map_x = (size_t)x;
+            auto map_y = (size_t)y;
+            if (map.is_empty(map_x, map_y)) continue;
+
+            auto tex_id = map.get(map_x, map_y); // our ray touches a wall, so draw the vertical column to create an illusion of 3D
+            assert(tex_id >= 0 && tex_id < walls.count);
+            
+            float dist = t * std::cos(angle - player.a);
+            depth_buffer[i] = dist;
+            size_t column_h = std::min<size_t>(2000, size_t(H / dist));
+
+            auto tex_x = texture_x(x, y, walls);
+            auto column = walls.get_scaled_column(tex_id, tex_x, column_h);
+            size_t pix_x = i + W / 2;
+            {
+                size_t j = 0;
+                for (auto pxl : column) {
+                    size_t pix_y = j + H / 2 - column_h / 2;
+                    if (pix_y < H)
+                        fb.at(pix_x, pix_y) = pxl;
+                    ++j;
+                }
+            }
+            break;
+        }
+    }
+}
+
+const float Pi = std::atan(1.0f)*4;
 
 int main()
 {
-	cout << "Hello CMake." << endl;
+    sf::RenderWindow window{ sf::VideoMode{W, H}, "tiny raycaster" }; 
+    sf::Texture texture{};
+    texture.create(W, H);
+
+    sf::Image walls;
+    walls.loadFromFile("walltext.png");
+    auto[walls_x, walls_y] = walls.getSize();
+
+    GameState gs{ 
+        Map(), 
+        Player{3.456f, 2.345f, 1.523f, Pi/3.f, 0, 0}, 
+        Texture{ walls, (short)walls_y, (short)(walls_x / walls_y) }
+    };
+
+    FrameBuffer fb;
+    fb.clear(color(0, 255, 0));
+    for (auto x = 0u; x < H; ++x)
+    {
+        fb.at(x, x) = color(255, 0, 0);
+    }
+
+    while (window.isOpen())
+    {
+        sf::Event e;
+        while (window.pollEvent(e))
+        {
+            if (e.type == sf::Event::Closed) 
+            {
+                window.close();
+            }
+            if (e.type == sf::Event::KeyPressed || e.type == sf::Event::KeyReleased)
+            {
+                switch(e.key.code)
+                {
+                case sf::Keyboard::Escape:
+                        window.close();
+                        break;
+                case sf::Keyboard::A:
+                case sf::Keyboard::Left:
+                    gs.player.a -= 0.1f;
+                    break;
+                case sf::Keyboard::D:
+                case sf::Keyboard::Right:
+                    gs.player.a += 0.1f;
+                    break;
+                }
+            }
+        }
+        render(gs, fb);
+        fb.draw(texture);
+        sf::Sprite sprite{ texture };
+        window.draw(sprite);
+        window.display();
+    }
 	return 0;
 }
