@@ -179,8 +179,7 @@ struct FrameBuffer {
             {
                 auto cx = x + j;
                 if (cx >= W) break;
-                if (alpha(pixel) > 0)
-                    at(cx, cy) = pixel;
+                at(cx, cy) = pixel;
             }
         }
     }
