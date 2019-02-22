@@ -354,6 +354,8 @@ int main()
     sf::RenderWindow window{ sf::VideoMode{W, H}, "tiny raycaster" }; 
     sf::Texture texture{};
     texture.create(W, H);
+    sf::Sprite renderedScene{ texture };
+    texture.create(W, H);
 
     sf::Image walls;
     walls.loadFromFile("walltext.png");
@@ -430,8 +432,7 @@ int main()
             txt.setString(s.str());
         }
         fb.drawTo(texture);
-        sf::Sprite sprite{ texture };
-        window.draw(sprite);
+        window.draw(renderedScene);
         window.draw(txt);
         window.display();
     }
