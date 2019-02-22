@@ -263,24 +263,9 @@ void draw_sprite(FrameBuffer& fb, const GameState& gs, const Sprite& sprite, con
         int x = h_offset + i;
         if (x < 0 || x >= W / 2) continue;
         if (depth_buffer[x] < sprite.playerDist) continue; // this sprite column is occluded
-        for (size_t j = 0; j < sprite_screen_size; ++j)
-        {
-            int y = v_offset + j;
-            if (y < 0 || y >= H) continue;
-            auto pixel = tex.get_pixel(sprite.texId, i*tex.size / sprite_screen_size, j*tex.size / sprite_screen_size);
-            auto a = alpha(pixel);
-            if (a  > 128)
-                fb.at(W / 2 + h_offset + i, v_offset + j) = pixel;
-        }
-        //fb.drawColumn(tex.get_scaled_column(sprite.texId, i*tex.size / sprite_screen_size, sprite_screen_size), x, v_offset);
-        //int y = v_offset;
-        //for (auto pixel : tex.get_scaled_column(sprite.texId, i*tex.size / sprite_screen_size, v_offset))
-        //{
-        //    if (y < 0 || y >= H) continue;
-        //    f
-        //}
+        auto column = tex.get_scaled_column(sprite.texId, i*tex.size / sprite_screen_size, sprite_screen_size);
+        fb.drawColumn(column, W / 2 + h_offset + i, v_offset);
     }
-
 }
 
 void render(const GameState& gs, FrameBuffer& fb)
