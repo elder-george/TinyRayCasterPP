@@ -4,7 +4,7 @@
 #include "TinyRaycaster.h"
 
 #include <SFML/Graphics.hpp>
-
+#define _ITERATOR_DEBUG_LEVEL 0
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -80,11 +80,11 @@ struct Texture {
 
     const sf::Image& img;
     short size, count;
+    const uint32_t* ptr{ reinterpret_cast<const uint32_t*>(img.getPixelsPtr()) };
 
     inline pxl get_pixel(size_t texture_id, size_t x, size_t y) const
     {
-        auto pxlColor = img.getPixel((unsigned)(x + size * texture_id), (unsigned)y);
-        auto pxl = color(pxlColor.r, pxlColor.g, pxlColor.b, pxlColor.a);
+        auto pxl = ptr[y * size * count + size * texture_id + x];
         return pxl;
     }
 
@@ -161,7 +161,6 @@ struct FrameBuffer {
     }
 
     inline pxl& at(size_t x, size_t y) {
-        assert(x < W && y < H);
         return pixels[y*W + x];
     }
 
