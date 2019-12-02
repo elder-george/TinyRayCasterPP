@@ -1,0 +1,1 @@
+A clone of [TinyRayCaster](https://github.com/ssloy/tinyraycaster) with SFML and (more) modern C++ (arguably, a good thing).
