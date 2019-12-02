@@ -14,14 +14,14 @@
 #include <sstream>
 
 // I was unable to get M_PI out of <cmath>, so computing it instead.
-const float Pi = std::atan(1.0f)*4;
+const float Pi = std::atan(1.0f) * 4;
 
 using namespace std;
 
 constexpr unsigned int W = 1024;
 constexpr unsigned int H = 512;
 
-static const char _map[]{ 
+static const char _map[]{
     "0000222222220000"\
     "1              5"\
     "1              5"\
@@ -37,12 +37,12 @@ static const char _map[]{
     "0     000      4"\
     "0 111          4"\
     "0              4"\
-    "0002222244444444" 
+    "0002222244444444"
 };
 
 struct Map {
     size_t w, h; // overall map dimensions
-    Map() 
+    Map()
         : w(16), h(16)
     {
         assert(sizeof(_map) == w * h + 1);
@@ -52,7 +52,7 @@ struct Map {
         assert(y < h && x < w && "coordinate is outside of map");
         return _map[y*w + x] - '0';
     }
-     bool is_empty(const size_t x, const size_t y) const {
+    bool is_empty(const size_t x, const size_t y) const {
         assert(y < h && x < w && "coordinate is outside of map");
         return _map[y*w + x] == ' ';
     }
@@ -91,7 +91,7 @@ struct Texture {
     inline column get_scaled_column(size_t textureId, size_t x, size_t height) const
     {
         assert(x < size && textureId < count);
-        return std::make_pair(iter{*this, textureId, x, 0u, height}, sentinel{});
+        return std::make_pair(iter{ *this, textureId, x, 0u, height }, sentinel{});
     }
 
     struct iter {
@@ -100,7 +100,7 @@ struct Texture {
         size_t height;
 
         inline pxl operator*() {
-            return tex.get_pixel(textureId, x, y*tex.size/height);
+            return tex.get_pixel(textureId, x, y*tex.size / height);
         }
 
         inline iter& operator++() {
@@ -222,22 +222,22 @@ inline size_t texture_x(float hit_x, float hit_y, const Texture& walls)
 }
 
 void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const std::vector<Sprite> sprites, size_t cell_w, size_t cell_h) {
-    for (size_t j=0; j<map.h; j++) {  // draw the map itself
-        for (size_t i=0; i<map.w; i++) {
+    for (size_t j = 0; j < map.h; j++) {  // draw the map itself
+        for (size_t i = 0; i < map.w; i++) {
             if (map.is_empty(i, j)) continue; // skip empty spaces
-            size_t rect_x = i*cell_w;
-            size_t rect_y = j*cell_h;
+            size_t rect_x = i * cell_w;
+            size_t rect_y = j * cell_h;
             size_t texid = map.get(i, j);
-            assert(texid<walls.count);
+            assert(texid < walls.count);
             fb.drawRectangle(rect_x, rect_y, cell_w, cell_h, walls.get_pixel(0, 0, texid)); // the color is taken from the upper left pixel of the texture #texid
         }
     }
     auto monster_size = 6u;
-    for (size_t i=0; i<sprites.size(); i++) { // show the monsters
-        fb.drawRectangle(size_t(sprites[i].x*cell_w-monster_size/2),
-            size_t(sprites[i].y*cell_h-monster_size/2),
-            size_t(monster_size), 
-            size_t(monster_size), 
+    for (size_t i = 0; i < sprites.size(); i++) { // show the monsters
+        fb.drawRectangle(size_t(sprites[i].x*cell_w - monster_size / 2),
+            size_t(sprites[i].y*cell_h - monster_size / 2),
+            size_t(monster_size),
+            size_t(monster_size),
             color(255, 0, 0));
     }
 }
@@ -247,15 +247,15 @@ void draw_sprite(FrameBuffer& fb, const GameState& gs, const Sprite& sprite, con
     const auto& player = gs.player;
     const auto& map = gs.map;
     const auto tex = gs.tex_monsters;
-    
-    float sprite_dir = std::atan2(sprite.y - player.y, sprite.x - player.x);
-    while (sprite_dir - player.a >  Pi) sprite_dir -= 2*Pi; // remove unncesessary periods from the relative direction
-    while (sprite_dir - player.a < -Pi) sprite_dir += 2*Pi;
 
-    size_t sprite_screen_size = std::min<size_t>(2000, static_cast<size_t>(H/sprite.playerDist)); // screen sprite size
+    float sprite_dir = std::atan2(sprite.y - player.y, sprite.x - player.x);
+    while (sprite_dir - player.a > Pi) sprite_dir -= 2 * Pi; // remove unncesessary periods from the relative direction
+    while (sprite_dir - player.a < -Pi) sprite_dir += 2 * Pi;
+
+    size_t sprite_screen_size = std::min<size_t>(2000, static_cast<size_t>(H / sprite.playerDist)); // screen sprite size
     // do not forget the 3D view takes only a half of the framebuffer, thus fb.w/2 for the screen width
-    int h_offset = (sprite_dir - player.a)*(W/2)/(player.fov) + (W/2)/2 - sprite_screen_size/2;
-    int v_offset = H/2 - sprite_screen_size/2;
+    int h_offset = (sprite_dir - player.a)*(W / 2) / (player.fov) + (W / 2) / 2 - sprite_screen_size / 2;
+    int v_offset = H / 2 - sprite_screen_size / 2;
 
     for (size_t i = 0; i < sprite_screen_size; ++i)
     {
@@ -275,7 +275,7 @@ void render(const GameState& gs, FrameBuffer& fb)
     const auto& sprites = gs.monsters;
     fb.clear(color(255, 255, 255));
 
-    auto cell_w = W / (map.w*2);
+    auto cell_w = W / (map.w * 2);
     auto cell_h = H / (map.h);
 
     std::array<float, W / 2> depth_buffer{ };
@@ -302,7 +302,7 @@ void render(const GameState& gs, FrameBuffer& fb)
             float y = player.y + t * sin_a;
             assert(y >= 0 && (size_t)y <= map.h - 1);
             assert(size_t(y) * cell_h < H);
-            
+
             // visibility cone
             fb.at((size_t)(x * cell_w), (size_t)(y*cell_h)) = color(190, 190, 190);
 
@@ -312,7 +312,7 @@ void render(const GameState& gs, FrameBuffer& fb)
 
             auto tex_id = map.get(map_x, map_y); // our ray touches a wall, so draw the vertical column to create an illusion of 3D
             assert(tex_id >= 0 && tex_id < walls.count);
-            
+
             float dist = t * cos_rel;
             depth_buffer[i] = dist;
             size_t column_h = std::min<size_t>(2000, size_t(H / dist));
@@ -320,7 +320,7 @@ void render(const GameState& gs, FrameBuffer& fb)
             auto tex_x = texture_x(x, y, walls);
             auto column = walls.get_scaled_column(tex_id, tex_x, column_h);
             size_t pix_x = i + W / 2;
-            size_t pix_y =  H / 2 - column_h / 2;
+            size_t pix_y = H / 2 - column_h / 2;
             fb.drawColumn(column, pix_x, pix_y);
             break;
         }
@@ -334,7 +334,7 @@ void render(const GameState& gs, FrameBuffer& fb)
 
 int main()
 {
-    sf::RenderWindow window{ sf::VideoMode{W, H}, "tiny raycaster" }; 
+    sf::RenderWindow window{ sf::VideoMode{W, H}, "tiny raycaster" };
     sf::Texture texture{};
     texture.create(W, H);
     sf::Sprite renderedScene{ texture };
@@ -347,9 +347,9 @@ int main()
     monsters.loadFromFile("monsters.png");
     auto[monsters_x, monsters_y] = monsters.getSize();
 
-    GameState gs{ 
-        Map(), 
-        Player{3.456f, 2.345f, 1.523f, Pi/3.f, 0, 0}, 
+    GameState gs{
+        Map(),
+        Player{3.456f, 2.345f, 1.523f, Pi / 3.f, 0, 0},
         {
             {3.523f, 3.812f, 2, 0},               // monsters lists
             {1.834f, 8.765f, 0, 0},
@@ -358,7 +358,7 @@ int main()
             {4.123f, 10.76f, 1, 0}
         },
         Texture{ walls, (short)walls_y, (short)(walls_x / walls_y) },
-        Texture{ monsters, (short)monsters_y, (short)(monsters_x/monsters_y) }
+        Texture{ monsters, (short)monsters_y, (short)(monsters_x / monsters_y) }
     };
 
     FrameBuffer fb;
@@ -382,17 +382,17 @@ int main()
         sf::Event e;
         while (window.pollEvent(e))
         {
-            if (e.type == sf::Event::Closed) 
+            if (e.type == sf::Event::Closed)
             {
                 window.close();
             }
             if (e.type == sf::Event::KeyPressed || e.type == sf::Event::KeyReleased)
             {
-                switch(e.key.code)
+                switch (e.key.code)
                 {
                 case sf::Keyboard::Escape:
-                        window.close();
-                        break;
+                    window.close();
+                    break;
                 case sf::Keyboard::A:
                 case sf::Keyboard::Left:
                     gs.player.a -= 0.1f;
@@ -411,7 +411,7 @@ int main()
             std::wstringstream s;
             clock.restart();
             render(gs, fb);
-            s << clock.restart().asMilliseconds()<<L"ms";
+            s << clock.restart().asMilliseconds() << L"ms";
             txt.setString(s.str());
         }
         fb.drawTo(texture);
@@ -419,5 +419,5 @@ int main()
         window.draw(txt);
         window.display();
     }
-	return 0;
+    return 0;
 }
