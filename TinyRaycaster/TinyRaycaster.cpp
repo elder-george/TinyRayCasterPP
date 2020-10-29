@@ -1,4 +1,4 @@
-﻿// TinyRaycaster.cpp : Defines the entry point for the application.
+// TinyRaycaster.cpp : Defines the entry point for the application.
 //
 
 #include "TinyRaycaster.h"
@@ -221,7 +221,7 @@ inline size_t texture_x(float hit_x, float hit_y, const Texture& walls)
     return (size_t)tex;
 }
 
-void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const std::vector<Sprite> sprites, size_t cell_w, size_t cell_h) {
+void draw_map(FrameBuffer &fb, const Texture &walls, const Map &map, const std::vector<Sprite>& sprites, size_t cell_w, size_t cell_h) {
     for (size_t j = 0; j < map.h; j++) {  // draw the map itself
         for (size_t i = 0; i < map.w; i++) {
             if (map.is_empty(i, j)) continue; // skip empty spaces
