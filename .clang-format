@@ -1,2 +1,4 @@
 BreakBeforeBraces: Allman
 PointerAlignment: Left
+IndentWidth: 4
+ColumnLimit: 120
